@@ -1,38 +1,54 @@
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
   name: frontend
   namespace: assignment-portal
+
 spec:
-  replicas: 1
+  replicas: 2
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+
   selector:
     matchLabels:
       app: frontend
+
   template:
     metadata:
       labels:
         app: frontend
+
     spec:
       imagePullSecrets:
         - name: ecr-registry-secret
+
       containers:
         - name: frontend
           image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-frontend:370483de8f6a83a37ca16198ef345bdac9f142c2
           imagePullPolicy: Always
+
           ports:
             - containerPort: 80
+
           readinessProbe:
             httpGet:
               path: /
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
+
           livenessProbe:
             httpGet:
               path: /
               port: 80
             initialDelaySeconds: 15
             periodSeconds: 20
+            
           resources:
             requests:
               cpu: "50m"

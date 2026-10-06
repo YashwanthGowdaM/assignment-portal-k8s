@@ -1,44 +1,61 @@
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
   name: backend
   namespace: assignment-portal
+
 spec:
-  replicas: 1
+  replicas: 2
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+
   selector:
     matchLabels:
       app: backend
+
   template:
     metadata:
       labels:
         app: backend
+
     spec:
       imagePullSecrets:
         - name: ecr-registry-secret
+
       containers:
         - name: backend
           image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-backend:370483de8f6a83a37ca16198ef345bdac9f142c2
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
+
           env:
             - name: FLASK_ENV
               valueFrom:
                 configMapKeyRef:
                   name: assignment-portal-config
                   key: FLASK_ENV
+
             - name: REDIS_URL
               valueFrom:
                 configMapKeyRef:
                   name: assignment-portal-config
                   key: REDIS_URL
+
             - name: DATABASE_URL
               value: "postgresql://postgres:postgres@postgres-service:5432/assignment_portal_db"
+
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: assignment-portal-secret
                   key: SECRET_KEY
+
           readinessProbe:
             httpGet:
               path: /health
@@ -47,6 +64,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
+
           livenessProbe:
             httpGet:
               path: /health
@@ -55,6 +73,7 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
+            
           resources:
             requests:
               cpu: "100m"
