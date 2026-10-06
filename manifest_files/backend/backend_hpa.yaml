@@ -25,7 +25,7 @@ spec:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 95
 
   behavior:
     scaleUp:
@@ -40,7 +40,7 @@ spec:
           periodSeconds: 60
 
     scaleDown:
-      stabilizationWindowSeconds: 300
+      stabilizationWindowSeconds: 30
       selectPolicy: Max
       policies:
         - type: Pods

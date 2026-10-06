@@ -24,8 +24,8 @@ spec:
         app: frontend
 
     spec:
-      imagePullSecrets:
-        - name: ecr-registry-secret
+#      imagePullSecrets:
+#        - name: ecr-registry-secret
 
       containers:
         - name: frontend
