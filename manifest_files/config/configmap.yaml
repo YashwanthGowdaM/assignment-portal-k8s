@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: assignment-portal-config
+  namespace: assignment-portal
+data:
+  FLASK_ENV: "production"
+  REDIS_URL: "redis://redis-service:6379/0"
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "assignment_portal_db"
+  POSTGRES_USER: "postgres"
