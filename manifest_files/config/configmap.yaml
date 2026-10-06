@@ -4,7 +4,7 @@ metadata:
   name: assignment-portal-config
   namespace: assignment-portal
 data:
-  FLASK_ENV: "production"
+  FLASK_ENV: "development"
   REDIS_URL: "redis://redis-service:6379/0"
   POSTGRES_HOST: "postgres-service"
   POSTGRES_PORT: "5432"
