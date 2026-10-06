@@ -17,7 +17,7 @@ spec:
         - name: ecr-registry-secret
       containers:
         - name: backend
-          image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-backend:29a256d4919a2f24cd3cf3dd6295093c6e88a25f
+          image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-backend:370483de8f6a83a37ca16198ef345bdac9f142c2
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
