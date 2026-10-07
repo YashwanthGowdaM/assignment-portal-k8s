@@ -1,0 +1,63 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+
+metadata:
+  name: assignment-portal-backend-alert
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+
+spec:
+  groups:
+    - name: assignment-portal.rules
+      rules:
+
+        - alert: AssignmentPortalBackendDown
+          expr: kube_deployment_status_replicas_available{namespace="assignment-portal",deployment="backend"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            service: assignment-portal-backend
+          annotations:
+            summary: "Assignment Portal Backend is down"
+            description: "The backend deployment has no available replicas for more than 1 minute."
+
+        - alert: AssignmentPortalBackendHighCPU
+          expr: (sum(rate(container_cpu_usage_seconds_total{namespace="assignment-portal",pod=~"backend-.*",container!="POD"}[5m])) / sum(kube_pod_container_resource_requests{namespace="assignment-portal",pod=~"backend-.*",resource="cpu"})) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            service: assignment-portal-backend
+          annotations:
+            summary: "High CPU usage on backend"
+            description: "Backend CPU utilization has exceeded 80% for more than 5 minutes."
+
+        - alert: AssignmentPortalBackendHighMemory
+          expr: (sum(container_memory_working_set_bytes{namespace="assignment-portal",pod=~"backend-.*",container!="POD"}) / sum(kube_pod_container_resource_requests{namespace="assignment-portal",pod=~"backend-.*",resource="memory"})) * 100 > 90
+          for: 5m
+          labels:
+            severity: warning
+            service: assignment-portal-backend
+          annotations:
+            summary: "High memory usage on backend"
+            description: "Backend memory utilization has exceeded 90% for more than 5 minutes."
+
+        - alert: AssignmentPortalBackendPodsRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="assignment-portal",pod=~"backend-.*"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: assignment-portal-backend
+          annotations:
+            summary: "Backend pods are restarting frequently"
+            description: "A backend pod has restarted more than 3 times within the last 15 minutes."
+
+        - alert: AssignmentPortalBackendUnavailable
+          expr: kube_deployment_status_replicas_unavailable{namespace="assignment-portal",deployment="backend"} > 0
+          for: 2m
+          labels:
+            severity: critical
+            service: assignment-portal-backend
+          annotations:
+            summary: "Backend replicas unavailable"
+            description: "One or more backend replicas are unavailable."
