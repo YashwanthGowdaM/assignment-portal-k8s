@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: assignment-portal
+  namespace: argocd
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/YashwanthGowdaM/assignment-portal-k8s.git
+    targetRevision: main
+    path: manifest_files
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: assignment-portal
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
