@@ -81,6 +81,7 @@ kubectl patch svc kube-prometheus-stack-prometheus -n monitoring -p '{"spec":{"t
 
 ### 1. Flask Application Exporter Integration
 Install the dependency in your backend service:
+https://github.com/YashwanthGowdaM/Assignment_submission_portal/commit/77fd0abddeb0d3fefcf1765151246247bc28117e
 ```text
 prometheus-flask-exporter==0.23.2
 ```
