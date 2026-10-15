@@ -29,7 +29,7 @@ spec:
 
       containers:
         - name: frontend
-          image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-frontend:77fd0abddeb0d3fefcf1765151246247bc28117e
+          image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-frontend:d399c71f34b7157d54c81573db80b3306e985ecf
           imagePullPolicy: Always
 
           ports:
