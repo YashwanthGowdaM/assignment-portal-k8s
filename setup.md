@@ -109,11 +109,13 @@ aws iam create-policy \
 # Create IAM Service Account
 
 ```bash
+ACC_ID=$(aws sts get-caller-identity --query "Account" --output text)
+
 eksctl create iamserviceaccount \
   --cluster=my-eks-cluster \
   --namespace=kube-system \
   --name=aws-load-balancer-controller \
-  --attach-policy-arn=arn:aws:iam::<ACCOUNT_ID>:policy/AWSLoadBalancerControllerIAMPolicy \
+  --attach-policy-arn=arn:aws:iam::${ACC_ID}:policy/AWSLoadBalancerControllerIAMPolicy \
   --override-existing-serviceaccounts \
   --approve \
   --region=us-east-1
@@ -140,13 +142,15 @@ helm repo update
 # Install AWS Load Balancer Controller
 
 ```bash
+VPC_ID=$(aws eks describe-cluster --name my-eks-cluster --region us-east-1 --query "cluster.resourcesVpcConfig.vpcId" --output text)
+
 helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   -n kube-system \
   --set clusterName=my-eks-cluster \
   --set serviceAccount.create=false \
   --set serviceAccount.name=aws-load-balancer-controller \
   --set region=us-east-1 \
-  --set vpcId=<VPC-ID>
+  --set vpcId=$VPC_ID
 ```
 
 Verify:
