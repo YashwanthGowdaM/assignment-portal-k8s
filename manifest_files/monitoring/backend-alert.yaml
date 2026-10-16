@@ -5,7 +5,7 @@ metadata:
   name: assignment-portal-backend-alert
   namespace: monitoring
   labels:
-    release: kube-prometheus-stack
+    release: monitoring
 
 spec:
   groups:
