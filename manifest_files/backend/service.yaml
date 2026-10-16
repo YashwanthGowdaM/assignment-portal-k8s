@@ -1,18 +1,15 @@
 apiVersion: v1
 kind: Service
-
 metadata:
   name: backend-service
   namespace: assignment-portal
-
+  labels:
+    app: backend          # add this
 spec:
   type: ClusterIP
-
   selector:
-    app: backend
-
+    app: backend          # your existing pod selector (keep whatever you have)
   ports:
     - name: http
-      protocol: TCP
       port: 5000
       targetPort: 5000
