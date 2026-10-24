@@ -1,0 +1,9 @@
+# Namespace that holds the log collector.
+# Kept separate from "assignment-portal" so app clean-ups never delete logging,
+# and so Fluent Bit can easily exclude its own logs (everything in this namespace).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    app.kubernetes.io/part-of: logging
