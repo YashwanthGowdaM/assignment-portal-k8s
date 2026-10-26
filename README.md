@@ -3,7 +3,8 @@
 Kubernetes manifests for the **Assignment Group Portal**, deployed to **Amazon EKS** by **ArgoCD** using a GitOps model. This repository is the **single source of truth** for what runs in the cluster; its image tags are updated automatically by the CI pipeline in the source-code repository.
 
 > **Repository role:** CD (desired cluster state)
-> **Companion repository (CI):** `Assignment_submission_portal` (branch `K8s-deployment`) — builds the images and commits the new tags here
+> **Companion repository (CI):** [`YashwanthGowdaM/Assignment_submission_portal`](https://github.com/YashwanthGowdaM/Assignment_submission_portal/tree/K8s-deployment) (branch `K8s-deployment`)
+>  — builds the images and commits the new tags here
 > **This repository:** [`YashwanthGowdaM/assignment-portal-k8s`](https://github.com/YashwanthGowdaM/assignment-portal-k8s) (branch `main`)
 
 ---
