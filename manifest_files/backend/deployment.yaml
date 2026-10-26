@@ -29,7 +29,7 @@ spec:
 
       containers:
         - name: backend
-          image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-backend:d399c71f34b7157d54c81573db80b3306e985ecf
+          image: 003344631245.dkr.ecr.us-east-1.amazonaws.com/assignment-portal-backend:6ac48c6e093809e5c69278f4d4bd22e3d598d6d3
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
