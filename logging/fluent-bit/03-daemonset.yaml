@@ -1,6 +1,7 @@
 # A DaemonSet runs exactly ONE Fluent Bit pod on EVERY node.
 # Each pod reads the log files of all the containers on its own node, which is
-# how logs from every Deployment (backend, frontend, redis, postgres, ...) are covered.
+# how logs from every pod of the assignment-portal app (backend, frontend, postgres,
+# redis) are covered, even when the HPA adds pods or ArgoCD rolls out a new version.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -28,9 +29,12 @@ spec:
         - operator: Exists
       containers:
         - name: fluent-bit
-          # Pinned version (never use :latest for a log pipeline). Check Docker Hub
-          # "fluent/fluent-bit" tags if you want to move to a newer release.
-          image: fluent/fluent-bit:4.2.4
+          # Fluent Bit 5.x, pinned to an exact release (never use :latest for a log
+          # pipeline: a surprise upgrade could change behaviour overnight).
+          # If this tag is not found, use 5.1.2 (confirmed on Docker Hub) and
+          # check https://hub.docker.com/r/fluent/fluent-bit/tags for the newest.
+          # Troubleshooting tip: the "-debug" variant (e.g. 5.1.4-debug) includes a shell.
+          image: fluent/fluent-bit:5.1.4
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -43,7 +47,7 @@ spec:
             - name: CLUSTER_NAME
               value: "my-eks-cluster"
           # SPLUNK_HOST, SPLUNK_PORT, SPLUNK_HEC_TOKEN come from this Secret
-          # (created by hand in README step 5.1 so it never lands in Git).
+          # (created by hand in README Step 17 so it never lands in Git).
           envFrom:
             - secretRef:
                 name: splunk-hec

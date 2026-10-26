@@ -1,4 +1,7 @@
-# Fluent Bit pipeline:  INPUT (read files) -> FILTER (enrich/clean) -> OUTPUT (send to Splunk)
+# Fluent Bit pipeline:  INPUT (read files) -> FILTER (clean/enrich) -> OUTPUT (send to Splunk)
+#
+# Tuned for the "assignment-portal" application running on my-eks-cluster:
+#   frontend (Nginx)  |  backend (Flask/Gunicorn)  |  postgres  |  redis
 #
 # Values written as ${SOMETHING} are filled in from environment variables set in
 # 03-daemonset.yaml (SPLUNK_HOST / SPLUNK_PORT / SPLUNK_HEC_TOKEN come from the
@@ -29,18 +32,24 @@ data:
         storage.backlog.mem_limit 5M
 
     # ---------------------------------------------------------------------
-    # INPUT: read every container log file on this node
+    # INPUT: read the container log files of the "assignment-portal" namespace
     # ---------------------------------------------------------------------
     [INPUT]
         Name                  tail
         Tag                   kube.*
-        Path                  /var/log/containers/*.log
-        # Never read Fluent Bit's own logs (everything in the "logging" namespace).
-        # This prevents the "collector logs itself" feedback loop.
-        # File name format: <pod>_<namespace>_<container>-<id>.log
-        Exclude_Path          /var/log/containers/*_logging_*.log
+        # File name format on the node:  <pod>_<namespace>_<container>-<id>.log
+        # So this one line selects ONLY your application's pods
+        # (backend, frontend, postgres, redis - now and after every ArgoCD rollout).
+        # Fluent Bit's own logs (namespace "logging") can therefore never be read.
+        #
+        # To collect more namespaces, list them with commas, for example:
+        #   Path  /var/log/containers/*_assignment-portal_*.log,/var/log/containers/*_argocd_*.log
+        #   Path  /var/log/containers/*_assignment-portal_*.log,/var/log/containers/*_monitoring_*.log
+        Path                  /var/log/containers/*_assignment-portal_*.log
         # EKS nodes use containerd, whose log lines use the "CRI" format.
-        # This parser also glues multi-line entries (like Java/Python stack traces) together.
+        # It also re-joins very long lines that containerd split into pieces.
+        # NOTE: it does NOT merge multi-line stack traces; each printed line becomes
+        # its own event in Splunk (see the optional Python filter further down).
         multiline.parser      cri
         # Remember how far each file was read, so a Fluent Bit restart does not
         # re-send old logs or skip new ones.
@@ -54,13 +63,27 @@ data:
 
     # ---------------------------------------------------------------------
     # FILTER 1: drop health-check noise BEFORE it costs Splunk license/disk.
-    #   kube-probe      = Kubernetes readiness/liveness probes (your /health, / checks)
-    #   ELB-HealthChecker = the AWS ALB health checks
+    #   kube-probe        = Kubernetes readiness/liveness probes (backend /health, frontend /)
+    #   ELB-HealthChecker = the AWS ALB health checks (frontend /)
+    # These appear in the Nginx access log because Nginx logs the User-Agent.
     # ---------------------------------------------------------------------
     [FILTER]
         Name                  grep
         Match                 kube.*
         Exclude               log (kube-probe|ELB-HealthChecker)
+
+    # ---------------------------------------------------------------------
+    # FILTER 2: drop requests for /health and /metrics by PATH.
+    #   The Flask backend's own access log may not print a User-Agent, so the
+    #   filter above would miss its probes. This one catches them by URL:
+    #     GET /health  (probes)     GET /metrics  (Prometheus scrape every 30 s)
+    # A real user's request such as "GET /healthy-recipes" is NOT dropped, because
+    # the path must be exactly /health or /metrics.
+    # ---------------------------------------------------------------------
+    [FILTER]
+        Name                  grep
+        Match                 kube.*
+        Exclude               log (GET|HEAD)\s/(health|metrics)(\s|\?)
 
     # OPTIONAL: also drop everything written to stderr by your containers.
     # WARNING: Flask/gunicorn and many apps write their normal logs to stderr,
@@ -70,8 +93,19 @@ data:
     #     Match               kube.*
     #     Exclude             stream stderr
 
+    # OPTIONAL: merge Python stack traces (Flask/Gunicorn "Traceback ...") into ONE event.
+    # Without it every line of a traceback is a separate event in Splunk.
+    # To try it: remove the leading "# " from the 4 lines below, apply, restart
+    # (see README "Good to know"). It must stay ABOVE the kubernetes filter.
+    # [FILTER]
+    #     Name                  multiline
+    #     Match                 kube.*
+    #     multiline.key_content log
+    #     multiline.parser      python
+
     # ---------------------------------------------------------------------
-    # FILTER 2: attach Kubernetes info (namespace, pod, container, labels, node)
+    # FILTER 3: attach Kubernetes info (namespace, pod, container, labels, image, node)
+    #   Labels give you  kubernetes.labels.app = backend | frontend | postgres | redis
     # ---------------------------------------------------------------------
     [FILTER]
         Name                  kubernetes
@@ -91,7 +125,7 @@ data:
         Buffer_Size           0
 
     # ---------------------------------------------------------------------
-    # FILTER 3: tag every event with the cluster name (handy if you add more clusters later)
+    # FILTER 4: tag every event with the cluster name
     # ---------------------------------------------------------------------
     [FILTER]
         Name                  modify
@@ -108,7 +142,7 @@ data:
         Port                  ${SPLUNK_PORT}
         Splunk_Token          ${SPLUNK_HEC_TOKEN}
         # Splunk's HEC uses HTTPS with a self-signed certificate out of the box,
-        # so verification is off for this first setup. See README "Hardening".
+        # so verification is off for this first setup. See README "Good to know" (hardening).
         TLS                   On
         TLS.Verify            Off
         Compress              gzip
