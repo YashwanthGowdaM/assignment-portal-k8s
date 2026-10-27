@@ -1,0 +1,101 @@
+# A DaemonSet runs exactly ONE Fluent Bit pod on EVERY node.
+# Each pod reads the log files of all the containers on its own node, which is
+# how logs from every pod of the assignment-portal app (backend, frontend, postgres,
+# redis) are covered, even when the HPA adds pods or ArgoCD rolls out a new version.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: fluent-bit
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fluent-bit
+    spec:
+      serviceAccountName: fluent-bit
+      terminationGracePeriodSeconds: 30
+      # Run on every node, including tainted ones (e.g. if you taint nodes later).
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: fluent-bit
+          # Fluent Bit 5.x, pinned to an exact release (never use :latest for a log
+          # pipeline: a surprise upgrade could change behaviour overnight).
+          # If this tag is not found, use 5.1.2 (confirmed on Docker Hub) and
+          # check https://hub.docker.com/r/fluent/fluent-bit/tags for the newest.
+          # Troubleshooting tip: the "-debug" variant (e.g. 5.1.4-debug) includes a shell.
+          image: fluent/fluent-bit:5.1.4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 2020
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CLUSTER_NAME
+              value: "my-eks-cluster"
+          # SPLUNK_HOST, SPLUNK_PORT, SPLUNK_HEC_TOKEN come from this Secret
+          # (created by hand in README Step 17 so it never lands in Git).
+          envFrom:
+            - secretRef:
+                name: splunk-hec
+          securityContext:
+            # Needs root to read the node's log files under /var/log
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 200Mi
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: state
+              mountPath: /var/fluent-bit/state
+            - name: config
+              mountPath: /fluent-bit/etc/fluent-bit.conf
+              subPath: fluent-bit.conf
+            - name: config
+              mountPath: /fluent-bit/etc/parsers.conf
+              subPath: parsers.conf
+      volumes:
+        # The node's log directory (the container log files live here)
+        - name: varlog
+          hostPath:
+            path: /var/log
+        # Small folder on the node that remembers read positions + holds the disk buffer
+        - name: state
+          hostPath:
+            path: /var/fluent-bit/state
+            type: DirectoryOrCreate
+        - name: config
+          configMap:
+            name: fluent-bit-config

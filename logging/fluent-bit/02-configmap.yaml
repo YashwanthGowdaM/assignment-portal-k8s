@@ -1,0 +1,169 @@
+# Fluent Bit pipeline:  INPUT (read files) -> FILTER (clean/enrich) -> OUTPUT (send to Splunk)
+#
+# Tuned for the "assignment-portal" application running on my-eks-cluster:
+#   frontend (Nginx)  |  backend (Flask/Gunicorn)  |  postgres  |  redis
+#
+# Values written as ${SOMETHING} are filled in from environment variables set in
+# 03-daemonset.yaml (SPLUNK_HOST / SPLUNK_PORT / SPLUNK_HEC_TOKEN come from the
+# "splunk-hec" Secret, so no credentials are stored in this file or in Git).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: fluent-bit
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Daemon                Off
+        Flush                 5
+        # Fluent Bit's OWN messages: only warnings/errors (keeps its output quiet)
+        Log_Level             warn
+        Parsers_File          parsers.conf
+        # Small built-in web server used by the Kubernetes health probes
+        HTTP_Server           On
+        HTTP_Listen           0.0.0.0
+        HTTP_Port             2020
+        Health_Check          On
+        # Disk buffer: if Splunk is down, logs wait on the node's disk and are sent later
+        storage.path          /var/fluent-bit/state/storage/
+        storage.sync          normal
+        storage.backlog.mem_limit 5M
+
+    # ---------------------------------------------------------------------
+    # INPUT: read the container log files of the "assignment-portal" namespace
+    # ---------------------------------------------------------------------
+    [INPUT]
+        Name                  tail
+        Tag                   kube.*
+        # File name format on the node:  <pod>_<namespace>_<container>-<id>.log
+        # So this one line selects ONLY your application's pods
+        # (backend, frontend, postgres, redis - now and after every ArgoCD rollout).
+        # Fluent Bit's own logs (namespace "logging") can therefore never be read.
+        #
+        # To collect more namespaces, list them with commas, for example:
+        #   Path  /var/log/containers/*_assignment-portal_*.log,/var/log/containers/*_argocd_*.log
+        #   Path  /var/log/containers/*_assignment-portal_*.log,/var/log/containers/*_monitoring_*.log
+        Path                  /var/log/containers/*_assignment-portal_*.log
+        # EKS nodes use containerd, whose log lines use the "CRI" format.
+        # It also re-joins very long lines that containerd split into pieces.
+        # NOTE: it does NOT merge multi-line stack traces; each printed line becomes
+        # its own event in Splunk (see the optional Python filter further down).
+        multiline.parser      cri
+        # Remember how far each file was read, so a Fluent Bit restart does not
+        # re-send old logs or skip new ones.
+        DB                    /var/fluent-bit/state/flb_kube.db
+        DB.sync               normal
+        Read_from_Head        On
+        Mem_Buf_Limit         20MB
+        Skip_Long_Lines       On
+        Refresh_Interval      10
+        storage.type          filesystem
+
+    # ---------------------------------------------------------------------
+    # FILTER 1: drop health-check noise BEFORE it costs Splunk license/disk.
+    #   kube-probe        = Kubernetes readiness/liveness probes (backend /health, frontend /)
+    #   ELB-HealthChecker = the AWS ALB health checks (frontend /)
+    # These appear in the Nginx access log because Nginx logs the User-Agent.
+    # ---------------------------------------------------------------------
+    [FILTER]
+        Name                  grep
+        Match                 kube.*
+        Exclude               log (kube-probe|ELB-HealthChecker)
+
+    # ---------------------------------------------------------------------
+    # FILTER 2: drop requests for /health and /metrics by PATH.
+    #   The Flask backend's own access log may not print a User-Agent, so the
+    #   filter above would miss its probes. This one catches them by URL:
+    #     GET /health  (probes)     GET /metrics  (Prometheus scrape every 30 s)
+    # A real user's request such as "GET /healthy-recipes" is NOT dropped, because
+    # the path must be exactly /health or /metrics.
+    # ---------------------------------------------------------------------
+    [FILTER]
+        Name                  grep
+        Match                 kube.*
+        Exclude               log (GET|HEAD)\s/(health|metrics)(\s|\?)
+
+    # OPTIONAL: also drop everything written to stderr by your containers.
+    # WARNING: Flask/gunicorn and many apps write their normal logs to stderr,
+    # so enabling this can hide real application logs. Leave commented unless sure.
+    # [FILTER]
+    #     Name                grep
+    #     Match               kube.*
+    #     Exclude             stream stderr
+
+    # OPTIONAL: merge Python stack traces (Flask/Gunicorn "Traceback ...") into ONE event.
+    # Without it every line of a traceback is a separate event in Splunk.
+    # To try it: remove the leading "# " from the 4 lines below, apply, restart
+    # (see README "Good to know"). It must stay ABOVE the kubernetes filter.
+    # [FILTER]
+    #     Name                  multiline
+    #     Match                 kube.*
+    #     multiline.key_content log
+    #     multiline.parser      python
+
+    # ---------------------------------------------------------------------
+    # FILTER 3: attach Kubernetes info (namespace, pod, container, labels, image, node)
+    #   Labels give you  kubernetes.labels.app = backend | frontend | postgres | redis
+    # ---------------------------------------------------------------------
+    [FILTER]
+        Name                  kubernetes
+        Match                 kube.*
+        Kube_URL              https://kubernetes.default.svc:443
+        Kube_CA_File          /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File       /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix       kube.var.log.containers.
+        # If the app prints JSON, split it into fields. If not, the text stays in "log".
+        Merge_Log             On
+        Keep_Log              Off
+        # Lets a pod opt out with the annotation  fluentbit.io/exclude: "true"
+        K8S-Logging.Exclude   On
+        K8S-Logging.Parser    On
+        Labels                On
+        Annotations           Off
+        Buffer_Size           0
+
+    # ---------------------------------------------------------------------
+    # FILTER 4: tag every event with the cluster name
+    # ---------------------------------------------------------------------
+    [FILTER]
+        Name                  modify
+        Match                 kube.*
+        Add                   cluster ${CLUSTER_NAME}
+
+    # ---------------------------------------------------------------------
+    # OUTPUT: send to Splunk HTTP Event Collector (HEC)
+    # ---------------------------------------------------------------------
+    [OUTPUT]
+        Name                  splunk
+        Match                 kube.*
+        Host                  ${SPLUNK_HOST}
+        Port                  ${SPLUNK_PORT}
+        Splunk_Token          ${SPLUNK_HEC_TOKEN}
+        # Splunk's HEC uses HTTPS with a self-signed certificate out of the box,
+        # so verification is off for this first setup. See README "Good to know" (hardening).
+        TLS                   On
+        TLS.Verify            Off
+        Compress              gzip
+        Workers               2
+        # Metadata Splunk stores with each event
+        Event_Index           k8s_logs
+        Event_Sourcetype      kube:container
+        Event_Source          kubernetes
+        Event_Host            ${NODE_NAME}
+        # Keep retrying while Splunk is unreachable (events wait in the disk buffer)
+        Retry_Limit           False
+        # Cap the disk buffer so a long Splunk outage cannot fill the node's disk
+        storage.total_limit_size 500M
+
+  parsers.conf: |
+    # Minimal parser file. Fluent Bit requires the file to exist; the "json"
+    # parser is available to pods that opt in with the annotation
+    #   fluentbit.io/parser: json
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On
