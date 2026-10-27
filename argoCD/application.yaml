@@ -9,7 +9,7 @@ spec:
 
   source:
     repoURL: https://github.com/YashwanthGowdaM/assignment-portal-k8s.git
-    targetRevision: Splunk&FluentBit
+    targetRevision: main
     path: manifest_files
     directory:
       recurse: true
